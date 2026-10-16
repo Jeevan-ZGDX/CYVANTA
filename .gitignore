@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+.DS_Store
+/neon_by_ascertn_ai_seo_visibility_platform.tsx
