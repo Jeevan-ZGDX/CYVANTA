@@ -444,6 +444,8 @@ const FAQ_DATA = [
 // ============================================================================
 // MAIN APPLICATION COMPONENT
 // ============================================================================
+const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) || "/api/v1";
+
 export default function App() {
   // Mode: 'marketing' (tryneonai.com clone) | 'workspace' (Live SaaS /dashboard)
   const [appMode, setAppMode] = useState('marketing');
@@ -528,6 +530,67 @@ export default function App() {
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Hydrate Workspace State from FastAPI Backend on Mount (PRD Part 3)
+  useEffect(() => {
+    async function bootstrapWorkspace() {
+      try {
+        const res = await fetch(`${API_BASE}/workspace/bootstrap`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.pages && data.pages.length) setPages(data.pages);
+        if (data.campaigns && data.campaigns.length) setCampaigns(data.campaigns);
+        if (data.tasks && data.tasks.length) setTasks(data.tasks);
+        if (data.brandKit) setBrandKit(data.brandKit);
+        if (data.socialPosts && data.socialPosts.length) setSocialPosts(data.socialPosts);
+      } catch (err) {
+        console.warn("Backend offline, using built-in seed state:", err);
+      }
+    }
+    bootstrapWorkspace();
+  }, []);
+
+  const handleToggleTask = async (taskId: string) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, done: !t.done } : t));
+    try {
+      const res = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'PATCH' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.task) {
+          setTasks(prev => prev.map(t => t.id === taskId ? data.task : t));
+        }
+      }
+    } catch {}
+  };
+
+  const handleUpdateBrandKit = async (updatedKit: any) => {
+    setBrandKit(updatedKit);
+    try {
+      await fetch(`${API_BASE}/brand-kit`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedKit)
+      });
+      showToast('Brand Kit design tokens saved to backend database!');
+    } catch {}
+  };
+
+  const handlePublishPage = async (pageToPublish: any) => {
+    try {
+      const res = await fetch(`${API_BASE}/pages/${pageToPublish.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pageToPublish)
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        setPages(prev => prev.map(p => p.id === pageToPublish.id ? saved : p));
+        showToast(`Published "${saved.title}" & saved to database!`);
+        return;
+      }
+    } catch {}
+    showToast(`Published "${pageToPublish.title}" to https://${brandKit.domain}${pageToPublish.slug}`);
   };
 
   // URL Hash Synchronizer for Browser Navigation
@@ -786,12 +849,42 @@ export default function App() {
   // GEMINI AI HANDLERS
   // ============================================================================
 
-  // 1. "Ask Neon" Omnichannel Campaign + Page + SEO Generator
+  // 1. "Ask Neon" Omnichannel Campaign + Page + SEO Generator (Connected to FastAPI)
   const handleRunAskNeon = async (customPrompt?: string) => {
     const promptToRun = customPrompt || askNeonPrompt;
     if (!promptToRun.trim()) return;
 
     setIsAskNeonLoading(true);
+    try {
+      // 1. Try FastAPI backend API
+      const res = await fetch(`${API_BASE}/ask-neon`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: promptToRun,
+          brandKit,
+          apiKey: userApiKey
+        })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success && result.hydrated) {
+          const { page, campaign, socialPost } = result.hydrated;
+          setPages(prev => [page, ...prev.filter(p => p.id !== page.id)]);
+          setSelectedPageId(page.id);
+          setCampaigns(prev => [campaign, ...prev.filter(c => c.id !== campaign.id)]);
+          setSocialPosts(prev => [socialPost, ...prev.filter(s => s.id !== socialPost.id)]);
+          setAskNeonResult(result.data);
+          showToast(`Neon AI built "${result.data.pageTitle}" + SEO Metadata + Email & Social assets!`);
+          return;
+        }
+      }
+    } catch (apiErr) {
+      console.warn("FastAPI backend /ask-neon unreachable, executing client fallback:", apiErr);
+    }
+
+    // Client-Side Deterministic Fallback Generator
     try {
       const schema = {
         type: "OBJECT",
@@ -883,7 +976,6 @@ Generate a complete, high-converting campaign package based on the user's reques
       setAskNeonResult(data);
       showToast(`Neon AI built "${data.pageTitle}" + SEO Metadata + Email & Social assets!`);
     } catch (error) {
-      // Graceful fallback if offline or throttled
       const fallbackData = {
         pageTitle: 'Q4 Corporate Gifting & VIP Experience',
         slug: '/q4-corporate-gifting-vip',
@@ -904,9 +996,29 @@ Generate a complete, high-converting campaign package based on the user's reques
     }
   };
 
-  // 2. 1-Click AI Technical & On-Page SEO Auto-Fixer
-  const handleAutoFixPageSeo = async (pageToFix) => {
+  // 2. 1-Click AI Technical & On-Page SEO Auto-Fixer (Connected to FastAPI)
+  const handleAutoFixPageSeo = async (pageToFix: any) => {
     setIsSeoAiRunning(true);
+    try {
+      // 1. Call FastAPI backend auto-fix endpoint
+      const res = await fetch(`${API_BASE}/seo/auto-fix/${pageToFix.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetKeyword: pageToFix.targetKeyword,
+          apiKey: userApiKey
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setPages(prev => prev.map(p => p.id === pageToFix.id ? updated : p));
+        showToast(`AI Auto-Fixed "${updated.title}" — SEO Score jumped to ${updated.seoScore || updated.seo_score}/100!`);
+        return;
+      }
+    } catch (apiErr) {
+      console.warn("FastAPI backend auto-fix failed, running client fallback:", apiErr);
+    }
+
     try {
       const schema = {
         type: "OBJECT",
@@ -973,10 +1085,32 @@ Current H1: ${pageToFix.h1}`,
     }
   };
 
-  // 3. AI Keyword Cluster & SERP Intent Generator
+  // 3. AI Keyword Cluster & SERP Intent Generator (Connected to FastAPI)
   const handleGenerateKeywordClusters = async () => {
     if (!keywordSeed.trim()) return;
     setIsClustering(true);
+    try {
+      // 1. Call FastAPI backend keyword clusters endpoint
+      const res = await fetch(`${API_BASE}/seo/keyword-clusters`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seedKeyword: keywordSeed,
+          apiKey: userApiKey
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.clusters && data.clusters.length) {
+          setKeywordClusters(data.clusters);
+          showToast(`Generated ${data.clusters.length} new SERP keyword clusters for "${keywordSeed}"!`);
+          return;
+        }
+      }
+    } catch (apiErr) {
+      console.warn("FastAPI backend keyword-clusters failed, running client fallback:", apiErr);
+    }
+
     try {
       const schema = {
         type: "ARRAY",
@@ -1011,7 +1145,7 @@ Current H1: ${pageToFix.h1}`,
   };
 
   // Use a template from Marketing or Workspace -> creates page and opens Builder
-  const handleUseTemplate = (tpl) => {
+  const handleUseTemplate = (tpl: any) => {
     const newId = `page-tpl-${Date.now()}`;
     const createdPage = {
       id: newId,
@@ -1044,9 +1178,35 @@ Current H1: ${pageToFix.h1}`,
     showToast(`Template "${tpl.title}" loaded into Neon Page Builder!`);
   };
 
-  // Simulate 100K+ Parallel Batch Email Send
-  const handleTriggerEmailBatch = () => {
-    setEmailBlast(prev => ({ ...prev, isSending: true, progress: 12 }));
+  // 4. Simulate / Dispatch 100K+ Parallel Batch Email Send (Connected to FastAPI)
+  const handleTriggerEmailBatch = async () => {
+    setEmailBlast(prev => ({ ...prev, isSending: true, progress: 14 }));
+    try {
+      const res = await fetch(`${API_BASE}/email/send-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignName: emailBlast.campaignName,
+          audienceSize: emailBlast.audienceSize,
+          subjectA: emailBlast.subjectA,
+          subjectB: emailBlast.subjectB,
+          body: emailBlast.body
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTimeout(() => setEmailBlast(prev => ({ ...prev, progress: 56 })), 400);
+        setTimeout(() => setEmailBlast(prev => ({ ...prev, progress: 88 })), 800);
+        setTimeout(() => {
+          setEmailBlast(prev => ({ ...prev, isSending: false, progress: 100, lastOpenRate: data.job?.openRate || '70.2%' }));
+          showToast(`${(emailBlast.audienceSize || 100000).toLocaleString()} emails dispatched across parallel send queues!`);
+        }, 1200);
+        return;
+      }
+    } catch (err) {
+      console.warn("Backend batch dispatch fallback to client:", err);
+    }
+
     setTimeout(() => setEmailBlast(prev => ({ ...prev, progress: 48 })), 500);
     setTimeout(() => setEmailBlast(prev => ({ ...prev, progress: 84 })), 1000);
     setTimeout(() => {
@@ -1406,11 +1566,7 @@ Current H1: ${pageToFix.h1}`,
                       {tasks.slice(0, 3).map(task => (
                         <div
                           key={task.id}
-                          onClick={() =>
-                            setTasks(prev =>
-                              prev.map(t => (t.id === task.id ? { ...t, done: !t.done } : t))
-                            )
-                          }
+                          onClick={() => handleToggleTask(task.id)}
                           className="flex items-center justify-between p-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 cursor-pointer transition-all shadow-2xs"
                         >
                           <div className="flex items-center gap-3">
@@ -2287,11 +2443,7 @@ Current H1: ${pageToFix.h1}`,
                       {tasks.map(t => (
                         <div
                           key={t.id}
-                          onClick={() =>
-                            setTasks(prev =>
-                              prev.map(item => (item.id === t.id ? { ...item, done: !item.done } : item))
-                            )
-                          }
+                          onClick={() => handleToggleTask(t.id)}
                           className="p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200 flex items-center justify-between cursor-pointer transition-all"
                         >
                           <div className="flex items-center gap-3">
@@ -2812,7 +2964,7 @@ Current H1: ${pageToFix.h1}`,
                   </button>
 
                   <button
-                    onClick={() => showToast(`Published "${selectedPage.title}" to https://${brandKit.domain}${selectedPage.slug}`)}
+                    onClick={() => handlePublishPage(selectedPage)}
                     className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs"
                   >
                     Publish Changes
@@ -3241,7 +3393,7 @@ Current H1: ${pageToFix.h1}`,
                   />
                 </div>
                 <button
-                  onClick={() => showToast('Brand Kit tokens synced across all 24 pages & AI prompts!')}
+                  onClick={() => handleUpdateBrandKit(brandKit)}
                   className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs"
                 >
                   Save & Sync Brand Kit

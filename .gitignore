@@ -5,3 +5,8 @@ dist
 *.log
 .DS_Store
 /neon_by_ascertn_ai_seo_visibility_platform.tsx
+/product_requirements_document_master_build_prompt.md
+*.db
+.venv/
+__pycache__/
+*.pyc

@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "tsx server/index.ts",
-    "start": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm run server\" \"npm run dev\"",
+    "server": ".venv/bin/python -m uvicorn main:app --app-dir neon-backend --host 0.0.0.0 --port 8000 --reload",
+    "server:node": "tsx server/index.ts",
+    "start": "concurrently -k -p \"[{name}]\" -n \"FASTAPI,VITE\" -c \"green,cyan\" \"npm run server\" \"npm run dev\"",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
