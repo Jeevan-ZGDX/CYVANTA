@@ -49,7 +49,9 @@ import {
   Monitor,
   Download,
   Key,
-  Shield
+  Shield,
+  ArrowLeft,
+  Home
 } from 'lucide-react';
 
 // ============================================================================
@@ -442,6 +444,116 @@ const FAQ_DATA = [
 ];
 
 // ============================================================================
+// DATA NORMALIZERS & RESILIENCE HELPERS
+// ============================================================================
+export function normalizePage(p: any) {
+  if (!p) return null;
+  return {
+    id: p.id || `page-${Date.now()}`,
+    title: p.title || 'Untitled Page',
+    slug: p.slug || '/untitled',
+    status: p.status || 'Published',
+    views: p.views || '1',
+    seoScore: Number(p.seoScore ?? p.seo_score ?? 85),
+    metaTitle: String(p.metaTitle ?? p.meta_title ?? p.title ?? ''),
+    metaDescription: String(p.metaDescription ?? p.meta_description ?? ''),
+    targetKeyword: String(p.targetKeyword ?? p.target_keyword ?? ''),
+    h1: String(p.h1 || p.title || ''),
+    h2s: Array.isArray(p.h2s) ? p.h2s : [],
+    schemaType: String(p.schemaType ?? p.schema_type ?? 'WebPage'),
+    canonical: String(p.canonical || ''),
+    internalLinks: Number(p.internalLinks ?? p.internal_links ?? 8),
+    wordCount: Number(p.wordCount ?? p.word_count ?? 850),
+    sections: Array.isArray(p.sections) ? p.sections : [],
+    issues: Array.isArray(p.issues) ? p.issues : []
+  };
+}
+
+export function normalizeBrandKit(b: any) {
+  if (!b) return null;
+  return {
+    id: b.id || 'default',
+    brandName: b.brandName ?? b.brand_name ?? 'Neon by Ascertn',
+    domain: b.domain ?? 'tryneonai.com',
+    primaryColor: b.primaryColor ?? b.primary_color ?? '#059669',
+    secondaryColor: b.secondaryColor ?? b.secondary_color ?? '#0F172A',
+    headingFont: b.headingFont ?? b.heading_font ?? 'Plus Jakarta Sans',
+    toneOfVoice: b.toneOfVoice ?? b.tone_of_voice ?? 'Bold, clear, executive, action-oriented',
+    targetAudience: b.targetAudience ?? b.target_audience ?? 'B2B Growth Teams, CMOs, Ecommerce & Agency Leaders'
+  };
+}
+
+export function normalizeCampaign(c: any) {
+  if (!c) return null;
+  return {
+    id: c.id || `camp-${Date.now()}`,
+    name: c.name || 'Untitled Campaign',
+    status: c.status || 'Active',
+    channels: Array.isArray(c.channels) ? c.channels : ['Website', 'Email'],
+    emailsSent: c.emailsSent ?? c.emails_sent ?? '0',
+    openRate: c.openRate ?? c.open_rate ?? '0%',
+    clickRate: c.clickRate ?? c.click_rate ?? '0%',
+    seoKeywordsRanked: Number(c.seoKeywordsRanked ?? c.seo_keywords_ranked ?? 0),
+    visibilityImpact: c.visibilityImpact ?? c.visibility_impact ?? '+0%'
+  };
+}
+
+export function normalizeVisibilityMetrics(v: any) {
+  if (!v) return null;
+  return {
+    totalScore: Number(v.totalScore ?? v.total_score ?? 88),
+    technicalSeo: Number(v.technicalSeo ?? v.technical_seo ?? 85),
+    contentFreshness: Number(v.contentFreshness ?? v.content_freshness ?? 87),
+    campaignReach: Number(v.campaignReach ?? v.campaign_reach ?? v.omnichannelReach ?? v.omnichannel_reach ?? 88),
+    seoStatusLabel: v.seoStatusLabel || 'Good'
+  };
+}
+
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("AppErrorBoundary caught error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-900 font-sans">
+          <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-xl text-center space-y-4">
+            <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h2 className="text-xl font-extrabold text-slate-900">View Recovery Mode</h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              {this.state.error?.message || "An unexpected error occurred while rendering this page."}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.hash = 'dashboard';
+                window.location.reload();
+              }}
+              className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs"
+            >
+              Reset to Dashboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================================
 // MAIN APPLICATION COMPONENT
 // ============================================================================
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) || "/api/v1";
@@ -539,11 +651,15 @@ export default function App() {
         const res = await fetch(`${API_BASE}/workspace/bootstrap`);
         if (!res.ok) return;
         const data = await res.json();
-        if (data.pages && data.pages.length) setPages(data.pages);
-        if (data.campaigns && data.campaigns.length) setCampaigns(data.campaigns);
-        if (data.tasks && data.tasks.length) setTasks(data.tasks);
-        if (data.brandKit) setBrandKit(data.brandKit);
-        if (data.socialPosts && data.socialPosts.length) setSocialPosts(data.socialPosts);
+        if (data.pages && Array.isArray(data.pages)) {
+          setPages(data.pages.map(normalizePage));
+        }
+        if (data.campaigns && Array.isArray(data.campaigns)) {
+          setCampaigns(data.campaigns.map(normalizeCampaign));
+        }
+        if (data.tasks && Array.isArray(data.tasks)) setTasks(data.tasks);
+        if (data.brandKit) setBrandKit(normalizeBrandKit(data.brandKit));
+        if (data.socialPosts && Array.isArray(data.socialPosts)) setSocialPosts(data.socialPosts);
       } catch (err) {
         console.warn("Backend offline, using built-in seed state:", err);
       }
@@ -565,59 +681,90 @@ export default function App() {
   };
 
   const handleUpdateBrandKit = async (updatedKit: any) => {
-    setBrandKit(updatedKit);
+    const norm = normalizeBrandKit(updatedKit);
+    setBrandKit(norm);
     try {
       await fetch(`${API_BASE}/brand-kit`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedKit)
+        body: JSON.stringify(norm)
       });
       showToast('Brand Kit design tokens saved to backend database!');
     } catch {}
   };
 
   const handlePublishPage = async (pageToPublish: any) => {
+    const norm = normalizePage(pageToPublish);
     try {
-      const res = await fetch(`${API_BASE}/pages/${pageToPublish.id}`, {
+      const res = await fetch(`${API_BASE}/pages/${norm.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pageToPublish)
+        body: JSON.stringify(norm)
       });
       if (res.ok) {
         const saved = await res.json();
-        setPages(prev => prev.map(p => p.id === pageToPublish.id ? saved : p));
-        showToast(`Published "${saved.title}" & saved to database!`);
+        const normSaved = normalizePage(saved);
+        setPages(prev => prev.map(p => p.id === norm.id ? normSaved : p));
+        showToast(`Published "${normSaved.title}" & saved to database!`);
         return;
       }
     } catch {}
-    showToast(`Published "${pageToPublish.title}" to https://${brandKit.domain}${pageToPublish.slug}`);
+    showToast(`Published "${norm.title}" to https://${brandKit.domain}${norm.slug}`);
   };
 
-  // URL Hash Synchronizer for Browser Navigation
+  // URL Hash & Slug Synchronizer for Browser Navigation
   useEffect(() => {
     const handleHash = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (!hash || hash === 'marketing' || ['create', 'templates', 'ai-features', 'pricing'].includes(hash)) {
+      const cleanHash = window.location.hash.replace(/^#\/?/, '');
+      const cleanPath = window.location.pathname.replace(/^\//, '');
+
+      // Check if hash routes to live page view (e.g. #view/page-1 or #view/corporate-rewards-platform)
+      if (cleanHash.startsWith('view') || cleanPath.startsWith('view')) {
+        const parts = cleanHash.split('/');
+        const targetIdOrSlug = parts[1] || '';
+        if (targetIdOrSlug) {
+          const match = pages.find(p => p.id === targetIdOrSlug || p.slug.replace(/^\//, '') === targetIdOrSlug);
+          if (match) setSelectedPageId(match.id);
+        }
+        setAppMode('view-page');
+        return;
+      }
+
+      // Check if pathname matches a published page slug directly
+      if (cleanPath && cleanPath !== 'index.html') {
+        const match = pages.find(p => p.slug.replace(/^\//, '') === cleanPath);
+        if (match) {
+          setSelectedPageId(match.id);
+          setAppMode('view-page');
+          return;
+        }
+      }
+
+      if (!cleanHash || cleanHash === 'marketing' || ['create', 'templates', 'ai-features', 'pricing'].includes(cleanHash)) {
         setAppMode('marketing');
-      } else if (hash === 'workspace' || hash === 'dashboard') {
+      } else if (cleanHash === 'workspace' || cleanHash === 'dashboard') {
         setAppMode('workspace');
         setActiveWorkspaceTab('dashboard');
-      } else if (['seo', 'pages', 'campaigns', 'email', 'social', 'brand', 'analytics'].includes(hash)) {
+      } else if (['seo', 'pages', 'campaigns', 'email', 'social', 'brand', 'analytics'].includes(cleanHash)) {
         setAppMode('workspace');
-        setActiveWorkspaceTab(hash);
+        setActiveWorkspaceTab(cleanHash);
       }
     };
 
     handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
-  }, []);
+  }, [pages]);
 
-  const navigateTo = (mode, tab = 'dashboard') => {
+  const navigateTo = (mode: string, tab = 'dashboard', pageId?: string) => {
     setAppMode(mode);
     if (mode === 'workspace') {
       setActiveWorkspaceTab(tab);
       window.location.hash = tab;
+    } else if (mode === 'view-page') {
+      const targetId = pageId || selectedPageId;
+      if (pageId) setSelectedPageId(pageId);
+      window.location.hash = `view/${targetId}`;
     } else {
       window.location.hash = 'marketing';
     }
@@ -826,7 +973,8 @@ export default function App() {
   // DYNAMIC VISIBILITY SCORE ENGINE (0 - 100)
   // ============================================================================
   const visibilityMetrics = useMemo(() => {
-    const avgSeo = Math.round(pages.reduce((acc, p) => acc + p.seoScore, 0) / pages.length);
+    const validPages = pages && pages.length ? pages : INITIAL_PAGES;
+    const avgSeo = Math.round(validPages.reduce((acc, p) => acc + (p.seoScore || 85), 0) / validPages.length);
     const completedTasksBonus = tasks.filter(t => t.done).length * 2;
     const activeCampaignBonus = campaigns.filter(c => c.status === 'Active').length * 3;
     const totalScore = Math.min(99, Math.max(82, Math.round(avgSeo * 0.88 + completedTasksBonus + activeCampaignBonus)));
@@ -834,16 +982,16 @@ export default function App() {
     return {
       totalScore,
       technicalSeo: avgSeo,
-      contentFreshness: Math.min(98, 79 + pages.length * 2),
+      contentFreshness: Math.min(98, 79 + validPages.length * 2),
       campaignReach: 88,
       seoStatusLabel: avgSeo >= 80 ? 'Good' : 'Needs Review'
     };
   }, [pages, tasks, campaigns]);
 
-  const selectedPage = useMemo(
-    () => pages.find(p => p.id === selectedPageId) || pages[0],
-    [pages, selectedPageId]
-  );
+  const selectedPage = useMemo(() => {
+    const found = pages.find(p => p.id === selectedPageId || p.slug === selectedPageId || p.slug === `/${selectedPageId}`);
+    return normalizePage(found || pages[0] || INITIAL_PAGES[0]);
+  }, [pages, selectedPageId]);
 
   // ============================================================================
   // GEMINI AI HANDLERS
@@ -2417,15 +2565,25 @@ Current H1: ${pageToFix.h1}`,
                               SEO Score: {p.seoScore}/100
                             </div>
                           </div>
-                          <button
-                            onClick={() => {
-                              setSelectedPageId(p.id);
-                              setActiveWorkspaceTab('seo');
-                            }}
-                            className="px-3 py-2 rounded-xl bg-white hover:bg-slate-900 hover:text-white text-slate-800 border border-slate-200 text-xs font-bold transition-all shadow-2xs"
-                          >
-                            Audit SEO
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => navigateTo('view-page', '', p.id)}
+                              className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+                              title="View live landing page"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>View Page</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedPageId(p.id);
+                                setActiveWorkspaceTab('seo');
+                              }}
+                              className="px-3 py-2 rounded-xl bg-white hover:bg-slate-900 hover:text-white text-slate-800 border border-slate-200 text-xs font-bold transition-all shadow-2xs"
+                            >
+                              Audit SEO
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -2964,6 +3122,15 @@ Current H1: ${pageToFix.h1}`,
                   </button>
 
                   <button
+                    onClick={() => navigateTo('view-page', '', selectedPage.id)}
+                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs transition-all"
+                    title="View full-page live view"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>View Live Page</span>
+                  </button>
+
+                  <button
                     onClick={() => handlePublishPage(selectedPage)}
                     className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs"
                   >
@@ -3082,9 +3249,14 @@ Current H1: ${pageToFix.h1}`,
                 {/* Right Live Responsive Canvas Preview with Device Switcher */}
                 <div className="lg:col-span-7 rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                   <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-                    <span className="font-mono truncate max-w-xs">
-                      https://{brandKit.domain}{selectedPage.slug}
-                    </span>
+                    <button
+                      onClick={() => navigateTo('view-page', '', selectedPage.id)}
+                      className="font-mono truncate max-w-xs hover:text-emerald-700 hover:underline flex items-center gap-1.5 cursor-pointer text-left"
+                      title="Click to view live full-page view"
+                    >
+                      <span className="truncate">https://{brandKit.domain}{selectedPage.slug}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0 text-slate-400" />
+                    </button>
 
                     {/* Responsive Device Switcher */}
                     <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
@@ -3445,9 +3617,182 @@ Current H1: ${pageToFix.h1}`,
     </div>
   );
 
+  // ============================================================================
+  // RENDER: LIVE FULL-PAGE LANDING PAGE PREVIEW & PUBLIC ROUTE (`#/view/...`)
+  // ============================================================================
+  const renderLivePageView = () => (
+    <div className="min-h-screen bg-white text-slate-900 font-sans antialiased flex flex-col">
+      {/* Top Floating Control Bar */}
+      <div className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur-md text-white px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigateTo('workspace', 'pages')}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center gap-1.5 transition-all"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Builder</span>
+          </button>
+          <button
+            onClick={() => navigateTo('workspace', 'seo')}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center gap-1.5 transition-all"
+          >
+            <Search className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Audit SEO</span>
+          </button>
+          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-700 text-slate-400 font-mono">
+            <span>Live URL:</span>
+            <span className="text-emerald-400 font-bold">https://{brandKit.domain}{selectedPage.slug}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Switch page dropdown in live preview */}
+          <select
+            value={selectedPage.id}
+            onChange={e => {
+              setSelectedPageId(e.target.value);
+              window.location.hash = `view/${e.target.value}`;
+            }}
+            className="bg-slate-800 border border-slate-700 text-white text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none"
+          >
+            {pages.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.title} ({p.slug})
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={handleExportHtml}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center gap-1.5"
+            title="Download Standalone HTML"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden md:inline">Export HTML</span>
+          </button>
+
+          <span className="px-2.5 py-1 rounded-md text-[11px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            SEO: {selectedPage.seoScore}/100
+          </span>
+        </div>
+      </div>
+
+      {/* Rendered Live Landing Page Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Navigation Bar styled by Brand Kit */}
+        <header className="border-b border-slate-100 bg-white/95 sticky top-[49px] z-40 backdrop-blur-md">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center font-extrabold text-white shadow-xs"
+                style={{ backgroundColor: brandKit.primaryColor }}
+              >
+                <Zap className="w-5 h-5 text-white fill-white" />
+              </div>
+              <span className="font-extrabold text-lg text-slate-900 tracking-tight" style={{ fontFamily: brandKit.headingFont }}>
+                {brandKit.brandName}
+              </span>
+            </div>
+            <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
+              <a href="#features" className="hover:text-slate-900">Features</a>
+              <a href="#overview" className="hover:text-slate-900">Overview</a>
+              <a href="#cta" className="hover:text-slate-900">Get Started</a>
+            </nav>
+            <div>
+              <button
+                style={{ backgroundColor: brandKit.primaryColor }}
+                className="px-4 py-2 rounded-xl text-white font-bold text-xs shadow-xs hover:opacity-95 transition-opacity"
+              >
+                Get Started →
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Hero Section */}
+        <section className="py-20 md:py-28 px-4 sm:px-6 max-w-5xl mx-auto text-center space-y-6">
+          <span
+            className="inline-block px-3 py-1 rounded-full text-xs font-bold"
+            style={{ backgroundColor: `${brandKit.primaryColor}15`, color: brandKit.primaryColor }}
+          >
+            {selectedPage.status === 'Published' ? 'Official Public Page' : 'Draft Preview'} · {selectedPage.targetKeyword || 'Enterprise Growth'}
+          </span>
+          <h1
+            className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-slate-900 tracking-tight leading-tight"
+            style={{ fontFamily: brandKit.headingFont }}
+          >
+            {selectedPage.h1 || selectedPage.title}
+          </h1>
+          <p className="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
+            {selectedPage.metaDescription || 'Experience unprecedented omnichannel conversion with personalized brand-aligned content.'}
+          </p>
+          <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+            <button
+              style={{ backgroundColor: brandKit.primaryColor }}
+              className="px-6 py-3 rounded-xl text-white font-bold text-sm shadow-sm hover:opacity-95 transition-all transform active:scale-95"
+            >
+              Start Free Trial →
+            </button>
+            <button
+              onClick={() => showToast('Demo scheduled for ' + brandKit.brandName + '!')}
+              className="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition-all"
+            >
+              Book 1-on-1 Walkthrough
+            </button>
+          </div>
+        </section>
+
+        {/* Dynamic Section Blocks */}
+        <div className="space-y-16 pb-24 max-w-5xl mx-auto px-4 sm:px-6 w-full">
+          {selectedPage.sections && selectedPage.sections.map((sec, idx) => (
+            <div
+              key={sec.id || idx}
+              className="p-8 sm:p-12 rounded-3xl bg-slate-50 border border-slate-200/80 shadow-2xs space-y-4"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="px-2.5 py-0.5 rounded-md text-[11px] font-bold"
+                  style={{ backgroundColor: `${brandKit.primaryColor}15`, color: brandKit.primaryColor }}
+                >
+                  {sec.type}
+                </span>
+              </div>
+              <h2
+                className="text-2xl sm:text-3xl font-extrabold text-slate-900"
+                style={{ fontFamily: brandKit.headingFont }}
+              >
+                {sec.heading}
+              </h2>
+              <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-3xl">
+                {sec.subheading}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Live Page Footer */}
+        <footer className="mt-auto border-t border-slate-200 bg-slate-50 py-10 px-4 text-center text-xs text-slate-500">
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-900">{brandKit.brandName}</span>
+              <span>· Powered by Neon Engine</span>
+            </div>
+            <div className="flex items-center gap-4 text-slate-400">
+              <span className="font-mono">JSON-LD: {selectedPage.schemaType}</span>
+              <span>·</span>
+              <span>Canonical: {selectedPage.canonical || `https://${brandKit.domain}${selectedPage.slug}`}</span>
+            </div>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+
   return (
-    <>
-      {appMode === 'marketing' ? renderMarketingSite() : renderWorkspace()}
+    <AppErrorBoundary>
+      {appMode === 'marketing' && renderMarketingSite()}
+      {appMode === 'workspace' && renderWorkspace()}
+      {appMode === 'view-page' && renderLivePageView()}
 
       {/* GLOBAL TOAST NOTIFICATION */}
       {toastMessage && (
@@ -3622,6 +3967,6 @@ Current H1: ${pageToFix.h1}`,
           </div>
         </div>
       )}
-    </>
+    </AppErrorBoundary>
   );
 }
